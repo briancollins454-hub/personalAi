@@ -14,6 +14,8 @@ const MODEL_FILES = [
   "face_landmark_68_model.bin",
   "face_expression_model-weights_manifest.json",
   "face_expression_model.bin",
+  "face_recognition_model-weights_manifest.json",
+  "face_recognition_model.bin",
 ];
 
 function copyModels() {

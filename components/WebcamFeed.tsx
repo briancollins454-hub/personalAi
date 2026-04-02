@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { loadModels, detectMood } from "@/lib/face-detection";
+import { loadModels, detectMood, registerFace, getRegisteredNames } from "@/lib/face-detection";
 import type { MoodReading, Mood } from "@/lib/mood-types";
 import { MOOD_EMOJI, MOOD_GRADIENT } from "@/lib/mood-types";
 
@@ -16,6 +16,10 @@ export default function WebcamFeed({ onMoodChange }: WebcamFeedProps) {
   const [currentMood, setCurrentMood] = useState<Mood>("neutral");
   const [confidence, setConfidence] = useState(0);
   const [faceDetected, setFaceDetected] = useState(false);
+  const [recognizedName, setRecognizedName] = useState<string | null>(null);
+  const [showRegister, setShowRegister] = useState(false);
+  const [registerName, setRegisterName] = useState("");
+  const [registerStatus, setRegisterStatus] = useState<string | null>(null);
 
   const startDetection = useCallback(async () => {
     if (!videoRef.current || !isReady) return;
@@ -25,6 +29,7 @@ export default function WebcamFeed({ onMoodChange }: WebcamFeedProps) {
       setCurrentMood(reading.mood);
       setConfidence(reading.confidence);
       setFaceDetected(true);
+      setRecognizedName(reading.recognizedName);
       onMoodChange(reading);
     } else {
       setFaceDetected(false);
@@ -114,21 +119,78 @@ export default function WebcamFeed({ onMoodChange }: WebcamFeedProps) {
               <span className="text-2xl">{MOOD_EMOJI[currentMood]}</span>
               <div>
                 <div className="text-white text-sm font-semibold capitalize">
-                  {currentMood}
+                  {recognizedName ? recognizedName : currentMood}
                 </div>
                 <div className="text-gray-400 text-xs">
                   {faceDetected
-                    ? `${Math.round(confidence * 100)}% confidence`
+                    ? recognizedName
+                      ? `${currentMood} · ${Math.round(confidence * 100)}%`
+                      : `${Math.round(confidence * 100)}% confidence`
                     : "No face detected"}
                 </div>
               </div>
             </div>
 
-            {/* Live indicator */}
-            <div className="bg-black/70 backdrop-blur-md rounded-full px-3 py-1.5 flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-white text-xs font-medium">LIVE</span>
+            <div className="flex items-center gap-2">
+              {/* Register face button */}
+              <button
+                onClick={() => setShowRegister(!showRegister)}
+                className="bg-black/70 backdrop-blur-md rounded-full px-3 py-1.5 text-white/60 text-xs hover:text-white/90 transition-all"
+              >
+                {getRegisteredNames().length > 0 ? "👤" : "➕ Register"}
+              </button>
+
+              {/* Live indicator */}
+              <div className="bg-black/70 backdrop-blur-md rounded-full px-3 py-1.5 flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-white text-xs font-medium">LIVE</span>
+              </div>
             </div>
+          </div>
+        )}
+
+        {/* Register face overlay */}
+        {showRegister && isReady && (
+          <div className="absolute top-2 left-2 right-2 bg-black/80 backdrop-blur-md rounded-xl p-3 z-10">
+            <div className="text-white text-xs font-medium mb-2">
+              {getRegisteredNames().length > 0
+                ? `Registered: ${getRegisteredNames().join(", ")}`
+                : "Register your face"}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={registerName}
+                onChange={(e) => setRegisterName(e.target.value)}
+                placeholder="Your name"
+                className="flex-1 bg-white/10 text-white text-xs rounded-lg px-3 py-1.5 border border-white/10 focus:border-white/30 focus:outline-none placeholder:text-white/30"
+                maxLength={30}
+              />
+              <button
+                onClick={async () => {
+                  if (!registerName.trim() || !videoRef.current) return;
+                  setRegisterStatus("Scanning...");
+                  const ok = await registerFace(videoRef.current, registerName.trim());
+                  if (ok) {
+                    setRegisterStatus(`Registered ${registerName.trim()}!`);
+                    setRegisterName("");
+                    setTimeout(() => {
+                      setRegisterStatus(null);
+                      setShowRegister(false);
+                    }, 1500);
+                  } else {
+                    setRegisterStatus("No face found — look at camera");
+                    setTimeout(() => setRegisterStatus(null), 2000);
+                  }
+                }}
+                className="bg-white/20 text-white text-xs rounded-lg px-3 py-1.5 hover:bg-white/30 transition-all"
+              >
+                Save
+              </button>
+            </div>
+            {registerStatus && (
+              <div className="text-white/60 text-xs mt-2">{registerStatus}</div>
+            )}
           </div>
         )}
       </div>

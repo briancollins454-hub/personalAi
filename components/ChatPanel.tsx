@@ -10,6 +10,7 @@ interface ChatPanelProps {
   isSpeaking: boolean;
   onThinkingChange: (thinking: boolean) => void;
   onVoiceListeningChange?: (listening: boolean) => void;
+  userName?: string | null;
 }
 
 export default function ChatPanel({
@@ -18,6 +19,7 @@ export default function ChatPanel({
   isSpeaking,
   onThinkingChange,
   onVoiceListeningChange,
+  userName,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -48,6 +50,7 @@ export default function ChatPanel({
         body: JSON.stringify({
           message: text.trim(),
           mood: currentMood,
+          userName: userName || null,
           history: messages.map((m) => ({
             role: m.role,
             content: m.content,

@@ -12,6 +12,7 @@ export interface MoodReading {
   confidence: number;
   timestamp: number;
   allExpressions: Record<Mood, number>;
+  recognizedName: string | null;
 }
 
 export interface ChatMessage {

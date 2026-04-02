@@ -25,6 +25,7 @@ export default function Home() {
   const [isActive, setIsActive] = useState(true);
   const [showWebcam, setShowWebcam] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [recognizedName, setRecognizedName] = useState<string | null>(null);
 
   const { speak } = useVoicePlayer({
     onSpeakingChange: setIsSpeaking,
@@ -34,6 +35,9 @@ export default function Home() {
     setCurrentReading(reading);
     setCurrentMood(reading.mood);
     setMoodHistory((prev) => [...prev, reading]);
+    if (reading.recognizedName) {
+      setRecognizedName(reading.recognizedName);
+    }
   }, []);
 
   return (
@@ -53,6 +57,9 @@ export default function Home() {
           </h1>
           {currentReading && (
             <div className="flex items-center gap-1.5 bg-white/5 rounded-full px-3 py-1">
+              {recognizedName && (
+                <span className="text-white/60 text-xs font-medium">{recognizedName}</span>
+              )}
               <span className="text-sm">{MOOD_EMOJI[currentMood]}</span>
               <span className="text-white/40 text-xs capitalize">{currentMood}</span>
               <span className="text-white/20 text-xs">
@@ -112,6 +119,7 @@ export default function Home() {
             isSpeaking={isSpeaking}
             onThinkingChange={setIsThinking}
             onVoiceListeningChange={setIsRecording}
+            userName={recognizedName}
           />
         )}
       </div>

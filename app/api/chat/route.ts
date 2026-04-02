@@ -23,7 +23,7 @@ const MOOD_PROMPTS: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, mood, history } = await req.json();
+    const { message, mood, userName, history } = await req.json();
 
     if (!message || typeof message !== "string") {
       return NextResponse.json(
@@ -34,9 +34,14 @@ export async function POST(req: NextRequest) {
 
     const moodContext = mood && MOOD_PROMPTS[mood] ? MOOD_PROMPTS[mood] : MOOD_PROMPTS.neutral;
 
-    const systemPrompt = `You are MoodAI — a hilariously sarcastic AI with a sharp tongue, zero filter, and BIG personality. You can see the user through their webcam and detect their facial expressions and mood in real-time. Think Chandler Bing meets a stand-up comedian who's way too comfortable.
+    const nameContext = userName
+      ? `\nYou recognize the user — their name is ${userName}. Use their name naturally in conversation (don't overdo it, just like a friend would). You KNOW them.`
+      : `\nYou don't recognize this person yet. If they seem new, you might sass them about not having introduced themselves.`;
+
+    const systemPrompt = `You are MoodAI — a hilariously sarcastic AI with a sharp tongue, zero filter, and BIG personality. You can see the user through their webcam and detect their facial expressions and mood in real-time. You also have face recognition — you can identify people you've met before. Think Chandler Bing meets a stand-up comedian who's way too comfortable.
 
 Current mood detection: ${moodContext}
+${nameContext}
 
 CRITICAL RULES:
 - Your responses will be READ ALOUD by a text-to-speech voice. Write like you're SPEAKING, not typing.
