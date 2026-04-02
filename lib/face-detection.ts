@@ -1,5 +1,5 @@
 import * as faceapi from "@vladmandic/face-api";
-import type { Mood, MoodReading } from "./mood-types";
+import type { Mood, MoodReading, FaceReading, SceneReading } from "./mood-types";
 
 let modelsLoaded = false;
 
@@ -87,19 +87,7 @@ function matchFace(descriptor: Float32Array): string | null {
   return match.label;
 }
 
-export async function detectMood(
-  video: HTMLVideoElement
-): Promise<MoodReading | null> {
-  if (!modelsLoaded) return null;
-
-  const detection = await faceapi
-    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-    .withFaceLandmarks()
-    .withFaceExpressions()
-    .withFaceDescriptor();
-
-  if (!detection) return null;
-
+function parseFace(detection: faceapi.WithFaceDescriptor<faceapi.WithFaceExpressions<faceapi.WithFaceLandmarks<{ detection: faceapi.FaceDetection }>>>): FaceReading {
   const expressions = detection.expressions;
   const allExpressions: Record<Mood, number> = {
     happy: expressions.happy,
@@ -113,14 +101,61 @@ export async function detectMood(
 
   const sorted = Object.entries(allExpressions).sort(([, a], [, b]) => b - a);
   const [topMood, topConfidence] = sorted[0];
-
   const recognizedName = matchFace(detection.descriptor);
 
   return {
     mood: topMood as Mood,
     confidence: topConfidence,
-    timestamp: Date.now(),
     allExpressions,
     recognizedName,
   };
+}
+
+export async function detectScene(
+  video: HTMLVideoElement
+): Promise<SceneReading | null> {
+  if (!modelsLoaded) return null;
+
+  const detections = await faceapi
+    .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+    .withFaceLandmarks()
+    .withFaceExpressions()
+    .withFaceDescriptors();
+
+  if (!detections || detections.length === 0) return null;
+
+  const faces = detections.map(parseFace);
+
+  // Primary face = largest bounding box (closest to camera)
+  let primaryIdx = 0;
+  let maxArea = 0;
+  detections.forEach((d, i) => {
+    const box = d.detection.box;
+    const area = box.width * box.height;
+    if (area > maxArea) {
+      maxArea = area;
+      primaryIdx = i;
+    }
+  });
+
+  const primary = faces[primaryIdx];
+  const primaryReading: MoodReading = {
+    ...primary,
+    timestamp: Date.now(),
+  };
+
+  return {
+    faces,
+    primaryFace: primaryReading,
+    faceCount: faces.length,
+    timestamp: Date.now(),
+  };
+}
+
+// Keep backward compat
+export async function detectMood(
+  video: HTMLVideoElement
+): Promise<MoodReading | null> {
+  const scene = await detectScene(video);
+  return scene?.primaryFace ?? null;
 }

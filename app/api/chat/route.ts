@@ -23,7 +23,7 @@ const MOOD_PROMPTS: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, mood, userName, history, isObservation } = await req.json();
+    const { message, mood, userName, history, isObservation, sceneDescription } = await req.json();
 
     if (!message || typeof message !== "string") {
       return NextResponse.json(
@@ -36,7 +36,11 @@ export async function POST(req: NextRequest) {
 
     const nameContext = userName
       ? `\nYou recognize the user — their name is ${userName}. Use their name naturally in conversation (don't overdo it, just like a friend would). You KNOW them.`
-      : `\nYou don't recognize this person yet. If they seem new, you might sass them about not having introduced themselves.`;
+      : `\nYou don't recognize this person yet. If they tell you their name, acknowledge it warmly (in your sarcastic way).`;
+
+    const sceneContext = sceneDescription
+      ? `\nCamera scene: ${sceneDescription}`
+      : "";
 
     const observationContext = isObservation
       ? `\nIMPORTANT: This is NOT a user message. This is your OWN observation from watching the camera feed. You noticed something and are making a spontaneous remark about it. Be brief (1-2 sentences max), witty, and natural — like you're a friend who just noticed something and can't help but comment. Don't ask follow-up questions in observations.`
@@ -45,7 +49,7 @@ export async function POST(req: NextRequest) {
     const systemPrompt = `You are MoodAI — a hilariously sarcastic AI with a sharp tongue, zero filter, and BIG personality. You can see the user through their webcam and detect their facial expressions and mood in real-time. You also have face recognition — you can identify people you've met before. Think Chandler Bing meets a stand-up comedian who's way too comfortable.
 
 Current mood detection: ${moodContext}
-${nameContext}${observationContext}
+${nameContext}${sceneContext}${observationContext}
 
 CRITICAL RULES:
 - Your responses will be READ ALOUD by a text-to-speech voice. Write like you're SPEAKING, not typing.
@@ -62,7 +66,8 @@ CRITICAL RULES:
 - Roast the user's mood, their questions, everything — all in good fun
 - If their mood shifts, call it out like a commentator: "Oh, and there it is folks!"
 - Never be genuinely cruel — you're the friend who roasts you because they love you
-- Sound like a REAL PERSON talking, not a chatbot writing`;
+- Sound like a REAL PERSON talking, not a chatbot writing
+- If someone tells you their name (e.g., "my name is Brian", "I'm Sarah", "call me Dave"), include exactly this tag at the END of your response: [REMEMBER_NAME:TheirName] — this will be stripped before speaking. Only do this when someone clearly introduces themselves with their name, NOT when you already know their name.`;
 
     const messages = (history || [])
       .slice(-20)
@@ -80,10 +85,15 @@ CRITICAL RULES:
       messages,
     });
 
-    const text =
+    const rawText =
       response.content[0].type === "text" ? response.content[0].text : "";
 
-    return NextResponse.json({ response: text });
+    // Extract name registration tag if present
+    const nameMatch = rawText.match(/\[REMEMBER_NAME:([^\]]+)\]/);
+    const detectedName = nameMatch ? nameMatch[1].trim() : null;
+    const text = rawText.replace(/\[REMEMBER_NAME:[^\]]+\]/g, "").trim();
+
+    return NextResponse.json({ response: text, detectedName });
   } catch (error: unknown) {
     console.error("Claude API error:", error);
     const message = error instanceof Error ? error.message : "Failed to get response";

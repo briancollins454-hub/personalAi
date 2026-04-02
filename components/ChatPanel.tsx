@@ -13,6 +13,8 @@ interface ChatPanelProps {
   userName?: string | null;
   observation?: string | null;
   onObservationHandled?: () => void;
+  sceneDescription?: string;
+  onNameDetected?: (name: string) => void;
 }
 
 export default function ChatPanel({
@@ -24,6 +26,8 @@ export default function ChatPanel({
   userName,
   observation,
   onObservationHandled,
+  sceneDescription,
+  onNameDetected,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -34,11 +38,15 @@ export default function ChatPanel({
   const userNameRef = useRef(userName);
   const currentMoodRef = useRef(currentMood);
   const messagesRef = useRef(messages);
+  const sceneRef = useRef(sceneDescription);
+  const onNameDetectedRef = useRef(onNameDetected);
 
   // Keep refs in sync to avoid stale closures
   useEffect(() => { userNameRef.current = userName; }, [userName]);
   useEffect(() => { currentMoodRef.current = currentMood; }, [currentMood]);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { sceneRef.current = sceneDescription; }, [sceneDescription]);
+  useEffect(() => { onNameDetectedRef.current = onNameDetected; }, [onNameDetected]);
 
   const callChat = useCallback(async (text: string, isObservation: boolean = false) => {
     if (isLoading) return;
@@ -65,6 +73,7 @@ export default function ChatPanel({
           message: text.trim(),
           mood: currentMoodRef.current,
           userName: userNameRef.current || null,
+          sceneDescription: sceneRef.current || null,
           isObservation,
           history: messagesRef.current.map((m) => ({
             role: m.role,
@@ -84,6 +93,11 @@ export default function ChatPanel({
 
       setMessages((prev) => [...prev, assistantMsg]);
       setLastResponse(data.response);
+
+      // If the AI detected a name introduction, notify parent
+      if (data.detectedName) {
+        onNameDetectedRef.current?.(data.detectedName);
+      }
 
       if (autoSpeak) {
         onSpeak(data.response);

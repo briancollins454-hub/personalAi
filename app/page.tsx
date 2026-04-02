@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
-import type { MoodReading, Mood } from "@/lib/mood-types";
+import type { MoodReading, Mood, SceneReading, FaceReading } from "@/lib/mood-types";
 import Orb from "@/components/Orb";
 import ChatPanel from "@/components/ChatPanel";
 import MoodDisplay from "@/components/MoodDisplay";
@@ -30,10 +30,13 @@ export default function Home() {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [recognizedName, setRecognizedName] = useState<string | null>(null);
   const [pendingObservation, setPendingObservation] = useState<string | null>(null);
+  const [sceneDescription, setSceneDescription] = useState<string>("");
+  const [nameToRegister, setNameToRegister] = useState<string | null>(null);
 
   // Observation tracking refs
   const prevMoodRef = useRef<Mood>("neutral");
-  const prevNameRef = useRef<string | null>(null);
+  const prevFaceCountRef = useRef(0);
+  const prevNamesRef = useRef<Set<string>>(new Set());
   const prevFaceDetectedRef = useRef(false);
   const lastObservationTime = useRef(0);
   const moodStableCount = useRef(0);
@@ -54,6 +57,18 @@ export default function Home() {
     setPendingObservation(null);
   }, []);
 
+  const handleNameDetected = useCallback((name: string) => {
+    setNameToRegister(name);
+    setRecognizedName(name);
+  }, []);
+
+  const handleRegistrationComplete = useCallback((name: string, success: boolean) => {
+    setNameToRegister(null);
+    if (success) {
+      console.log(`Face registered for ${name}`);
+    }
+  }, []);
+
   const handleMoodChange = useCallback((reading: MoodReading) => {
     setCurrentReading(reading);
     setCurrentMood(reading.mood);
@@ -62,71 +77,113 @@ export default function Home() {
     if (reading.recognizedName) {
       setRecognizedName(reading.recognizedName);
     }
+  }, []);
 
-    const faceDetected = !!reading;
-    const wasFaceDetected = prevFaceDetectedRef.current;
-    const prevName = prevNameRef.current;
+  const handleSceneChange = useCallback((scene: SceneReading) => {
+    // Build a scene description for the AI
+    const faceDescriptions = scene.faces.map((f: FaceReading) => {
+      const name = f.recognizedName || "unknown person";
+      return `${name} (${f.mood}, ${Math.round(f.confidence * 100)}%)`;
+    });
+    setSceneDescription(
+      scene.faceCount === 1
+        ? `1 person visible: ${faceDescriptions[0]}`
+        : `${scene.faceCount} people visible: ${faceDescriptions.join(", ")}`
+    );
+
+    const currentNames = new Set(
+      scene.faces.map((f: FaceReading) => f.recognizedName).filter(Boolean) as string[]
+    );
+    const prevNames = prevNamesRef.current;
+    const prevCount = prevFaceCountRef.current;
     const prevMood = prevMoodRef.current;
 
-    // Event: A known person just appeared
-    if (reading.recognizedName && reading.recognizedName !== prevName) {
-      if (!prevName) {
+    // Event: New known person appeared
+    Array.from(currentNames).forEach((name) => {
+      if (!prevNames.has(name)) {
+        const face = scene.faces.find((f: FaceReading) => f.recognizedName === name);
         queueObservation(
-          `[OBSERVATION] I just recognized ${reading.recognizedName} on camera. Their current mood looks ${reading.mood}. Make a sarcastic greeting.`
+          `[OBSERVATION] I just recognized ${name} on camera. Their mood looks ${face?.mood || "neutral"}. ${scene.faceCount > 1 ? `There are ${scene.faceCount} people in frame now.` : ""} Make a sarcastic greeting.`
         );
-      } else {
+      }
+    });
+
+    // Event: Known person left
+    Array.from(prevNames).forEach((name) => {
+      if (!currentNames.has(name)) {
         queueObservation(
-          `[OBSERVATION] Wait — ${reading.recognizedName} just showed up, replacing ${prevName}. Their mood is ${reading.mood}. Comment on the switch.`
+          `[OBSERVATION] ${name} just disappeared from the camera. ${scene.faceCount > 0 ? `Still ${scene.faceCount} ${scene.faceCount === 1 ? "person" : "people"} here.` : ""} Make a sarcastic goodbye.`
+        );
+      }
+    });
+
+    // Event: More people showed up (unknown faces)
+    if (scene.faceCount > prevCount && scene.faceCount > 1) {
+      const unknownCount = scene.faces.filter((f: FaceReading) => !f.recognizedName).length;
+      if (unknownCount > 0 && prevCount > 0) {
+        queueObservation(
+          `[OBSERVATION] Oh, the crowd is growing. I see ${scene.faceCount} people now, up from ${prevCount}. ${unknownCount} of them I don't recognize. Make a sarcastic comment about the gathering.`
         );
       }
     }
 
-    // Event: A face appeared (unknown)
-    if (faceDetected && !wasFaceDetected && !reading.recognizedName) {
+    // Event: People left (count dropped)
+    if (scene.faceCount < prevCount && prevCount > 1 && scene.faceCount > 0) {
       queueObservation(
-        `[OBSERVATION] Someone just appeared on camera but I don't recognize them. Their mood looks ${reading.mood}. Make a sarcastic remark about the stranger.`
+        `[OBSERVATION] Someone left the party. Down to ${scene.faceCount} ${scene.faceCount === 1 ? "person" : "people"} now from ${prevCount}. Comment on the exodus.`
       );
     }
 
-    // Event: Significant mood shift (track stability to avoid noise)
-    if (reading.mood === lastStableMood.current) {
+    // Event: First unknown face appeared (no faces before)
+    if (scene.faceCount > 0 && prevCount === 0 && currentNames.size === 0) {
+      queueObservation(
+        `[OBSERVATION] Someone just appeared on camera but I don't recognize them. Their mood looks ${scene.primaryFace?.mood || "neutral"}. Make a sarcastic remark about the stranger.`
+      );
+    }
+
+    // Event: Dramatic mood shift on primary face
+    const primaryMood = scene.primaryFace?.mood || "neutral";
+    if (primaryMood === lastStableMood.current) {
       moodStableCount.current++;
     } else {
-      // New mood detected — if it's been stable for 3+ readings (3 seconds), it's real
-      if (moodStableCount.current >= 3 && reading.mood !== prevMood) {
+      if (moodStableCount.current >= 3 && primaryMood !== prevMood) {
         const moodShiftDramatic =
-          (prevMood === "happy" && (reading.mood === "sad" || reading.mood === "angry")) ||
-          (prevMood === "sad" && reading.mood === "happy") ||
-          (prevMood === "neutral" && reading.mood !== "neutral") ||
-          (prevMood === "angry" && reading.mood === "happy");
+          (prevMood === "happy" && (primaryMood === "sad" || primaryMood === "angry")) ||
+          (prevMood === "sad" && primaryMood === "happy") ||
+          (prevMood === "neutral" && primaryMood !== "neutral") ||
+          (prevMood === "angry" && primaryMood === "happy");
 
         if (moodShiftDramatic) {
-          const who = reading.recognizedName || "the user";
+          const who = scene.primaryFace?.recognizedName || "the user";
           queueObservation(
-            `[OBSERVATION] ${who}'s mood just shifted from ${prevMood} to ${reading.mood}. React to this mood change.`
+            `[OBSERVATION] ${who}'s mood just shifted from ${prevMood} to ${primaryMood}. React to this mood change.`
           );
         }
       }
       moodStableCount.current = 1;
-      lastStableMood.current = reading.mood;
+      lastStableMood.current = primaryMood;
     }
 
     // Update tracking refs
-    prevMoodRef.current = reading.mood;
-    prevNameRef.current = reading.recognizedName || null;
-    prevFaceDetectedRef.current = faceDetected;
+    prevMoodRef.current = primaryMood;
+    prevNamesRef.current = currentNames;
+    prevFaceCountRef.current = scene.faceCount;
+    prevFaceDetectedRef.current = scene.faceCount > 0;
   }, [queueObservation]);
 
   const handleFaceLost = useCallback(() => {
     if (prevFaceDetectedRef.current) {
-      const who = prevNameRef.current || "someone";
+      const names = Array.from(prevNamesRef.current);
+      const who = names.length > 0 ? names.join(" and ") : "everyone";
       queueObservation(
-        `[OBSERVATION] ${who} just disappeared from the camera. Make a short sarcastic goodbye remark.`
+        `[OBSERVATION] ${who} just disappeared from the camera. Nobody's here now. Make a short sarcastic remark about being alone.`
       );
       prevFaceDetectedRef.current = false;
-      prevNameRef.current = null;
+      prevFaceCountRef.current = 0;
+      prevNamesRef.current = new Set();
       setCurrentReading(null);
       setRecognizedName(null);
+      setSceneDescription("");
     }
   }, [queueObservation]);
 
@@ -155,6 +212,11 @@ export default function Home() {
               <span className="text-white/20 text-xs">
                 {Math.round((currentReading.confidence ?? 0) * 100)}%
               </span>
+              {prevFaceCountRef.current > 1 && (
+                <span className="text-white/30 text-xs ml-1">
+                  · {prevFaceCountRef.current} faces
+                </span>
+              )}
             </div>
           )}
           {!currentReading && (
@@ -212,6 +274,8 @@ export default function Home() {
             userName={recognizedName}
             observation={pendingObservation}
             onObservationHandled={handleObservationHandled}
+            sceneDescription={sceneDescription}
+            onNameDetected={handleNameDetected}
           />
         )}
       </div>
@@ -227,7 +291,13 @@ export default function Home() {
               ✕
             </button>
           )}
-          <WebcamFeed onMoodChange={handleMoodChange} onFaceLost={handleFaceLost} />
+          <WebcamFeed
+            onMoodChange={handleMoodChange}
+            onSceneChange={handleSceneChange}
+            onFaceLost={handleFaceLost}
+            registerNameFromChat={nameToRegister}
+            onRegistrationComplete={handleRegistrationComplete}
+          />
         </div>
         {showWebcam && (
           <div className="mt-2">

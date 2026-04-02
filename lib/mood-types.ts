@@ -15,6 +15,20 @@ export interface MoodReading {
   recognizedName: string | null;
 }
 
+export interface FaceReading {
+  mood: Mood;
+  confidence: number;
+  allExpressions: Record<Mood, number>;
+  recognizedName: string | null;
+}
+
+export interface SceneReading {
+  faces: FaceReading[];
+  primaryFace: MoodReading | null;
+  faceCount: number;
+  timestamp: number;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;

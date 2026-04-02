@@ -1,22 +1,26 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { loadModels, detectMood, registerFace, getRegisteredNames } from "@/lib/face-detection";
-import type { MoodReading, Mood } from "@/lib/mood-types";
+import { loadModels, detectScene, registerFace, getRegisteredNames } from "@/lib/face-detection";
+import type { MoodReading, Mood, SceneReading } from "@/lib/mood-types";
 import { MOOD_EMOJI, MOOD_GRADIENT } from "@/lib/mood-types";
 
 interface WebcamFeedProps {
   onMoodChange: (reading: MoodReading) => void;
+  onSceneChange?: (scene: SceneReading) => void;
   onFaceLost?: () => void;
+  registerNameFromChat?: string | null;
+  onRegistrationComplete?: (name: string, success: boolean) => void;
 }
 
-export default function WebcamFeed({ onMoodChange, onFaceLost }: WebcamFeedProps) {
+export default function WebcamFeed({ onMoodChange, onSceneChange, onFaceLost, registerNameFromChat, onRegistrationComplete }: WebcamFeedProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentMood, setCurrentMood] = useState<Mood>("neutral");
   const [confidence, setConfidence] = useState(0);
   const [faceDetected, setFaceDetected] = useState(false);
+  const [faceCount, setFaceCount] = useState(0);
   const [recognizedName, setRecognizedName] = useState<string | null>(null);
   const [showRegister, setShowRegister] = useState(false);
   const [registerName, setRegisterName] = useState("");
@@ -25,18 +29,21 @@ export default function WebcamFeed({ onMoodChange, onFaceLost }: WebcamFeedProps
   const startDetection = useCallback(async () => {
     if (!videoRef.current || !isReady) return;
 
-    const reading = await detectMood(videoRef.current);
-    if (reading) {
-      setCurrentMood(reading.mood);
-      setConfidence(reading.confidence);
+    const scene = await detectScene(videoRef.current);
+    if (scene && scene.primaryFace) {
+      setCurrentMood(scene.primaryFace.mood);
+      setConfidence(scene.primaryFace.confidence);
       setFaceDetected(true);
-      setRecognizedName(reading.recognizedName);
-      onMoodChange(reading);
+      setFaceCount(scene.faceCount);
+      setRecognizedName(scene.primaryFace.recognizedName);
+      onMoodChange(scene.primaryFace);
+      onSceneChange?.(scene);
     } else {
       setFaceDetected(false);
+      setFaceCount(0);
       onFaceLost?.();
     }
-  }, [isReady, onMoodChange, onFaceLost]);
+  }, [isReady, onMoodChange, onSceneChange, onFaceLost]);
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -74,6 +81,15 @@ export default function WebcamFeed({ onMoodChange, onFaceLost }: WebcamFeedProps
     const interval = setInterval(startDetection, 1000);
     return () => clearInterval(interval);
   }, [isReady, startDetection]);
+
+  // Register face from chat when name is provided
+  useEffect(() => {
+    if (registerNameFromChat && videoRef.current && isReady) {
+      registerFace(videoRef.current, registerNameFromChat).then((ok) => {
+        onRegistrationComplete?.(registerNameFromChat, ok);
+      });
+    }
+  }, [registerNameFromChat, isReady, onRegistrationComplete]);
 
   if (error) {
     return (
@@ -126,8 +142,8 @@ export default function WebcamFeed({ onMoodChange, onFaceLost }: WebcamFeedProps
                 <div className="text-gray-400 text-xs">
                   {faceDetected
                     ? recognizedName
-                      ? `${currentMood} · ${Math.round(confidence * 100)}%`
-                      : `${Math.round(confidence * 100)}% confidence`
+                      ? `${currentMood} · ${Math.round(confidence * 100)}%${faceCount > 1 ? ` · ${faceCount} faces` : ""}`
+                      : `${Math.round(confidence * 100)}% confidence${faceCount > 1 ? ` · ${faceCount} faces` : ""}`
                     : "No face detected"}
                 </div>
               </div>
