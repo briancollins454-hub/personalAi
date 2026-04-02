@@ -11,6 +11,8 @@ interface ChatPanelProps {
   onThinkingChange: (thinking: boolean) => void;
   onVoiceListeningChange?: (listening: boolean) => void;
   userName?: string | null;
+  observation?: string | null;
+  onObservationHandled?: () => void;
 }
 
 export default function ChatPanel({
@@ -20,6 +22,8 @@ export default function ChatPanel({
   onThinkingChange,
   onVoiceListeningChange,
   userName,
+  observation,
+  onObservationHandled,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -27,18 +31,28 @@ export default function ChatPanel({
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [lastResponse, setLastResponse] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const userNameRef = useRef(userName);
+  const currentMoodRef = useRef(currentMood);
+  const messagesRef = useRef(messages);
 
-  const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || isLoading) return;
+  // Keep refs in sync to avoid stale closures
+  useEffect(() => { userNameRef.current = userName; }, [userName]);
+  useEffect(() => { currentMoodRef.current = currentMood; }, [currentMood]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
 
-    const userMsg: ChatMessage = {
-      role: "user",
-      content: text.trim(),
-      mood: currentMood,
-      timestamp: Date.now(),
-    };
+  const callChat = useCallback(async (text: string, isObservation: boolean = false) => {
+    if (isLoading) return;
 
-    setMessages((prev) => [...prev, userMsg]);
+    if (!isObservation) {
+      const userMsg: ChatMessage = {
+        role: "user",
+        content: text.trim(),
+        mood: currentMoodRef.current,
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, userMsg]);
+    }
+
     setInput("");
     setIsLoading(true);
     onThinkingChange(true);
@@ -49,9 +63,10 @@ export default function ChatPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: text.trim(),
-          mood: currentMood,
-          userName: userName || null,
-          history: messages.map((m) => ({
+          mood: currentMoodRef.current,
+          userName: userNameRef.current || null,
+          isObservation,
+          history: messagesRef.current.map((m) => ({
             role: m.role,
             content: m.content,
           })),
@@ -83,13 +98,21 @@ export default function ChatPanel({
       setIsLoading(false);
       onThinkingChange(false);
     }
-  }, [isLoading, currentMood, messages, autoSpeak, onSpeak, onThinkingChange]);
+  }, [isLoading, autoSpeak, onSpeak, onThinkingChange]);
+
+  // Handle incoming observations from the page
+  useEffect(() => {
+    if (observation && !isLoading && !isSpeaking) {
+      callChat(observation, true);
+      onObservationHandled?.();
+    }
+  }, [observation, isLoading, isSpeaking, callChat, onObservationHandled]);
 
   const handleVoiceResult = useCallback(
     (transcript: string) => {
-      sendMessage(transcript);
+      callChat(transcript);
     },
-    [sendMessage]
+    [callChat]
   );
 
   const { isListening: isVoiceListening, isSupported: voiceSupported, toggleListening } =
@@ -153,7 +176,7 @@ export default function ChatPanel({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            sendMessage(input);
+            if (input.trim()) callChat(input);
           }}
           className="flex-1 relative"
         >

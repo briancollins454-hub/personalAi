@@ -7,9 +7,10 @@ import { MOOD_EMOJI, MOOD_GRADIENT } from "@/lib/mood-types";
 
 interface WebcamFeedProps {
   onMoodChange: (reading: MoodReading) => void;
+  onFaceLost?: () => void;
 }
 
-export default function WebcamFeed({ onMoodChange }: WebcamFeedProps) {
+export default function WebcamFeed({ onMoodChange, onFaceLost }: WebcamFeedProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,8 +34,9 @@ export default function WebcamFeed({ onMoodChange }: WebcamFeedProps) {
       onMoodChange(reading);
     } else {
       setFaceDetected(false);
+      onFaceLost?.();
     }
-  }, [isReady, onMoodChange]);
+  }, [isReady, onMoodChange, onFaceLost]);
 
   useEffect(() => {
     let stream: MediaStream | null = null;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import type { MoodReading, Mood } from "@/lib/mood-types";
 import Orb from "@/components/Orb";
@@ -15,6 +15,9 @@ const WebcamFeed = dynamic(() => import("@/components/WebcamFeed"), {
   loading: () => null,
 });
 
+// Minimum seconds between proactive observations
+const OBSERVATION_COOLDOWN = 25;
+
 export default function Home() {
   const [currentReading, setCurrentReading] = useState<MoodReading | null>(null);
   const [moodHistory, setMoodHistory] = useState<MoodReading[]>([]);
@@ -26,19 +29,106 @@ export default function Home() {
   const [showWebcam, setShowWebcam] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [recognizedName, setRecognizedName] = useState<string | null>(null);
+  const [pendingObservation, setPendingObservation] = useState<string | null>(null);
+
+  // Observation tracking refs
+  const prevMoodRef = useRef<Mood>("neutral");
+  const prevNameRef = useRef<string | null>(null);
+  const prevFaceDetectedRef = useRef(false);
+  const lastObservationTime = useRef(0);
+  const moodStableCount = useRef(0);
+  const lastStableMood = useRef<Mood>("neutral");
 
   const { speak } = useVoicePlayer({
     onSpeakingChange: setIsSpeaking,
   });
 
+  const queueObservation = useCallback((text: string) => {
+    const now = Date.now() / 1000;
+    if (now - lastObservationTime.current < OBSERVATION_COOLDOWN) return;
+    lastObservationTime.current = now;
+    setPendingObservation(text);
+  }, []);
+
+  const handleObservationHandled = useCallback(() => {
+    setPendingObservation(null);
+  }, []);
+
   const handleMoodChange = useCallback((reading: MoodReading) => {
     setCurrentReading(reading);
     setCurrentMood(reading.mood);
     setMoodHistory((prev) => [...prev, reading]);
+
     if (reading.recognizedName) {
       setRecognizedName(reading.recognizedName);
     }
-  }, []);
+
+    const faceDetected = !!reading;
+    const wasFaceDetected = prevFaceDetectedRef.current;
+    const prevName = prevNameRef.current;
+    const prevMood = prevMoodRef.current;
+
+    // Event: A known person just appeared
+    if (reading.recognizedName && reading.recognizedName !== prevName) {
+      if (!prevName) {
+        queueObservation(
+          `[OBSERVATION] I just recognized ${reading.recognizedName} on camera. Their current mood looks ${reading.mood}. Make a sarcastic greeting.`
+        );
+      } else {
+        queueObservation(
+          `[OBSERVATION] Wait — ${reading.recognizedName} just showed up, replacing ${prevName}. Their mood is ${reading.mood}. Comment on the switch.`
+        );
+      }
+    }
+
+    // Event: A face appeared (unknown)
+    if (faceDetected && !wasFaceDetected && !reading.recognizedName) {
+      queueObservation(
+        `[OBSERVATION] Someone just appeared on camera but I don't recognize them. Their mood looks ${reading.mood}. Make a sarcastic remark about the stranger.`
+      );
+    }
+
+    // Event: Significant mood shift (track stability to avoid noise)
+    if (reading.mood === lastStableMood.current) {
+      moodStableCount.current++;
+    } else {
+      // New mood detected — if it's been stable for 3+ readings (3 seconds), it's real
+      if (moodStableCount.current >= 3 && reading.mood !== prevMood) {
+        const moodShiftDramatic =
+          (prevMood === "happy" && (reading.mood === "sad" || reading.mood === "angry")) ||
+          (prevMood === "sad" && reading.mood === "happy") ||
+          (prevMood === "neutral" && reading.mood !== "neutral") ||
+          (prevMood === "angry" && reading.mood === "happy");
+
+        if (moodShiftDramatic) {
+          const who = reading.recognizedName || "the user";
+          queueObservation(
+            `[OBSERVATION] ${who}'s mood just shifted from ${prevMood} to ${reading.mood}. React to this mood change.`
+          );
+        }
+      }
+      moodStableCount.current = 1;
+      lastStableMood.current = reading.mood;
+    }
+
+    // Update tracking refs
+    prevMoodRef.current = reading.mood;
+    prevNameRef.current = reading.recognizedName || null;
+    prevFaceDetectedRef.current = faceDetected;
+  }, [queueObservation]);
+
+  const handleFaceLost = useCallback(() => {
+    if (prevFaceDetectedRef.current) {
+      const who = prevNameRef.current || "someone";
+      queueObservation(
+        `[OBSERVATION] ${who} just disappeared from the camera. Make a short sarcastic goodbye remark.`
+      );
+      prevFaceDetectedRef.current = false;
+      prevNameRef.current = null;
+      setCurrentReading(null);
+      setRecognizedName(null);
+    }
+  }, [queueObservation]);
 
   return (
     <main className="h-screen flex flex-col overflow-hidden relative">
@@ -120,6 +210,8 @@ export default function Home() {
             onThinkingChange={setIsThinking}
             onVoiceListeningChange={setIsRecording}
             userName={recognizedName}
+            observation={pendingObservation}
+            onObservationHandled={handleObservationHandled}
           />
         )}
       </div>
@@ -135,7 +227,7 @@ export default function Home() {
               ✕
             </button>
           )}
-          <WebcamFeed onMoodChange={handleMoodChange} />
+          <WebcamFeed onMoodChange={handleMoodChange} onFaceLost={handleFaceLost} />
         </div>
         {showWebcam && (
           <div className="mt-2">
