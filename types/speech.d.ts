@@ -1,5 +1,6 @@
 // Type declarations for Web Speech API
 interface SpeechRecognitionEvent extends Event {
+  readonly resultIndex: number;
   results: SpeechRecognitionResultList;
 }
 

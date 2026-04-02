@@ -115,10 +115,12 @@ export default function ChatPanel({
     [callChat]
   );
 
-  const { isListening: isVoiceListening, isSupported: voiceSupported, toggleListening } =
+  const { isListening: isVoiceListening, isSupported: voiceSupported } =
     useSpeechRecognition({
       onResult: handleVoiceResult,
       onListeningChange: onVoiceListeningChange,
+      alwaysOn: true,
+      paused: isSpeaking || isLoading,
     });
 
   useEffect(() => {
@@ -184,9 +186,9 @@ export default function ChatPanel({
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={isVoiceListening ? "Listening..." : isLoading ? "Thinking..." : "Talk to MoodAI..."}
+            placeholder={isLoading ? "Thinking..." : isSpeaking ? "Speaking..." : isVoiceListening ? "🎙 Listening..." : "Talk or type..."}
             className="w-full bg-white/5 text-white rounded-full px-6 py-3.5 text-sm border border-white/10 focus:border-white/25 focus:outline-none focus:ring-0 transition-all placeholder:text-white/20 backdrop-blur-md"
-            disabled={isLoading || isVoiceListening}
+            disabled={isLoading}
           />
           <button
             type="submit"
@@ -200,25 +202,22 @@ export default function ChatPanel({
           </button>
         </form>
 
-        {/* Mic button */}
+        {/* Listening indicator */}
         {voiceSupported && (
-          <button
-            onClick={toggleListening}
-            disabled={isLoading || isSpeaking}
-            className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+          <div
+            className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all ${
               isVoiceListening
-                ? "bg-red-500/20 text-red-400 border-2 border-red-500/50 animate-pulse"
-                : "bg-white/5 text-white/40 border border-white/10 hover:bg-white/10 hover:text-white/60"
-            } disabled:opacity-30`}
-            title={isVoiceListening ? "Stop listening" : "Speak to MoodAI"}
+                ? "bg-green-500/15 text-green-400 border border-green-500/30"
+                : isSpeaking
+                ? "bg-purple-500/15 text-purple-400 border border-purple-500/30"
+                : isLoading
+                ? "bg-blue-500/15 text-blue-400 border border-blue-500/30"
+                : "bg-white/5 text-white/20 border border-white/10"
+            }`}
+            title={isVoiceListening ? "Listening..." : isSpeaking ? "Speaking..." : isLoading ? "Thinking..." : "Mic paused"}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" y1="19" x2="12" y2="23" />
-              <line x1="8" y1="23" x2="16" y2="23" />
-            </svg>
-          </button>
+            {isVoiceListening ? "🎙" : isSpeaking ? "🔊" : isLoading ? "💭" : "⏸"}
+          </div>
         )}
 
         {lastResponse && (
