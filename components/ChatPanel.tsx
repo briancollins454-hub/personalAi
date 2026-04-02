@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import type { ChatMessage, Mood } from "@/lib/mood-types";
+import useSpeechRecognition from "./useSpeechRecognition";
 
 interface ChatPanelProps {
   currentMood: Mood;
   onSpeak: (text: string) => void;
   isSpeaking: boolean;
   onThinkingChange: (thinking: boolean) => void;
+  onVoiceListeningChange?: (listening: boolean) => void;
 }
 
 export default function ChatPanel({
@@ -15,6 +17,7 @@ export default function ChatPanel({
   onSpeak,
   isSpeaking,
   onThinkingChange,
+  onVoiceListeningChange,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -23,20 +26,12 @@ export default function ChatPanel({
   const [lastResponse, setLastResponse] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
-      behavior: "smooth",
-    });
-  }, [messages]);
-
-  async function handleSend() {
-    const text = input.trim();
-    if (!text || isLoading) return;
+  const sendMessage = useCallback(async (text: string) => {
+    if (!text.trim() || isLoading) return;
 
     const userMsg: ChatMessage = {
       role: "user",
-      content: text,
+      content: text.trim(),
       mood: currentMood,
       timestamp: Date.now(),
     };
@@ -51,7 +46,7 @@ export default function ChatPanel({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: text,
+          message: text.trim(),
           mood: currentMood,
           history: messages.map((m) => ({
             role: m.role,
@@ -61,7 +56,6 @@ export default function ChatPanel({
       });
 
       const data = await res.json();
-
       if (!res.ok) throw new Error(data.error || "Chat failed");
 
       const assistantMsg: ChatMessage = {
@@ -78,17 +72,35 @@ export default function ChatPanel({
       }
     } catch (err) {
       console.error("Chat error:", err);
-      const errorMsg: ChatMessage = {
-        role: "assistant",
-        content: "Sorry, I had trouble responding. Please try again.",
-        timestamp: Date.now(),
-      };
-      setMessages((prev) => [...prev, errorMsg]);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Sorry, I had trouble responding. Please try again.", timestamp: Date.now() },
+      ]);
     } finally {
       setIsLoading(false);
       onThinkingChange(false);
     }
-  }
+  }, [isLoading, currentMood, messages, autoSpeak, onSpeak, onThinkingChange]);
+
+  const handleVoiceResult = useCallback(
+    (transcript: string) => {
+      sendMessage(transcript);
+    },
+    [sendMessage]
+  );
+
+  const { isListening: isVoiceListening, isSupported: voiceSupported, toggleListening } =
+    useSpeechRecognition({
+      onResult: handleVoiceResult,
+      onListeningChange: onVoiceListeningChange,
+    });
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [messages]);
 
   return (
     <div className="max-w-2xl mx-auto space-y-3">
@@ -138,7 +150,7 @@ export default function ChatPanel({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            handleSend();
+            sendMessage(input);
           }}
           className="flex-1 relative"
         >
@@ -146,30 +158,42 @@ export default function ChatPanel({
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={isLoading ? "Thinking..." : "Talk to MoodAI..."}
+            placeholder={isVoiceListening ? "Listening..." : isLoading ? "Thinking..." : "Talk to MoodAI..."}
             className="w-full bg-white/5 text-white rounded-full px-6 py-3.5 text-sm border border-white/10 focus:border-white/25 focus:outline-none focus:ring-0 transition-all placeholder:text-white/20 backdrop-blur-md"
-            disabled={isLoading}
+            disabled={isLoading || isVoiceListening}
           />
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
             className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/10 text-white/60 flex items-center justify-center hover:bg-white/20 disabled:opacity-30 transition-all"
           >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="22" y1="2" x2="11" y2="13" />
               <polygon points="22 2 15 22 11 13 2 9 22 2" />
             </svg>
           </button>
         </form>
+
+        {/* Mic button */}
+        {voiceSupported && (
+          <button
+            onClick={toggleListening}
+            disabled={isLoading || isSpeaking}
+            className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+              isVoiceListening
+                ? "bg-red-500/20 text-red-400 border-2 border-red-500/50 animate-pulse"
+                : "bg-white/5 text-white/40 border border-white/10 hover:bg-white/10 hover:text-white/60"
+            } disabled:opacity-30`}
+            title={isVoiceListening ? "Stop listening" : "Speak to MoodAI"}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+          </button>
+        )}
 
         {lastResponse && (
           <button

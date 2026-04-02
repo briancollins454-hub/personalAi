@@ -21,6 +21,8 @@ export default function Home() {
   const [currentMood, setCurrentMood] = useState<Mood>("neutral");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isActive, setIsActive] = useState(true);
   const [showWebcam, setShowWebcam] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
 
@@ -53,6 +55,14 @@ export default function Home() {
             <div className="flex items-center gap-1.5 bg-white/5 rounded-full px-3 py-1">
               <span className="text-sm">{MOOD_EMOJI[currentMood]}</span>
               <span className="text-white/40 text-xs capitalize">{currentMood}</span>
+              <span className="text-white/20 text-xs">
+                {Math.round((currentReading.confidence ?? 0) * 100)}%
+              </span>
+            </div>
+          )}
+          {!currentReading && (
+            <div className="flex items-center gap-1.5 bg-white/5 rounded-full px-3 py-1">
+              <span className="text-white/20 text-xs">No face detected</span>
             </div>
           )}
         </div>
@@ -87,43 +97,44 @@ export default function Home() {
           isSpeaking={isSpeaking}
           isListening={!!currentReading}
           isThinking={isThinking}
+          isRecording={isRecording}
+          isActive={isActive}
+          onToggle={() => setIsActive(!isActive)}
         />
       </div>
 
       {/* Bottom: Chat input + messages */}
       <div className="relative z-20 px-4 pb-6">
-        <ChatPanel
-          currentMood={currentMood}
-          onSpeak={speak}
-          isSpeaking={isSpeaking}
-          onThinkingChange={setIsThinking}
-        />
+        {isActive && (
+          <ChatPanel
+            currentMood={currentMood}
+            onSpeak={speak}
+            isSpeaking={isSpeaking}
+            onThinkingChange={setIsThinking}
+            onVoiceListeningChange={setIsRecording}
+          />
+        )}
       </div>
 
-      {/* Webcam mini-feed (top-left overlay) */}
-      {showWebcam && (
-        <div className="absolute top-16 left-4 z-30 w-64">
-          <div className="relative">
+      {/* Webcam — always running for face detection */}
+      <div className={showWebcam ? "absolute top-16 left-4 z-30 w-64" : "hidden"}>
+        <div className="relative">
+          {showWebcam && (
             <button
               onClick={() => setShowWebcam(false)}
               className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-black/60 text-white/60 text-xs flex items-center justify-center hover:bg-black/80"
             >
               ✕
             </button>
-            <WebcamFeed onMoodChange={handleMoodChange} />
-          </div>
+          )}
+          <WebcamFeed onMoodChange={handleMoodChange} />
+        </div>
+        {showWebcam && (
           <div className="mt-2">
             <MoodDisplay reading={currentReading} />
           </div>
-        </div>
-      )}
-
-      {/* Hidden webcam when feed is closed (still detects) */}
-      {!showWebcam && (
-        <div className="hidden">
-          <WebcamFeed onMoodChange={handleMoodChange} />
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Analytics panel (right overlay) */}
       {showAnalytics && (

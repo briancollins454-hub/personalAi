@@ -6,9 +6,12 @@ interface OrbProps {
   isSpeaking: boolean;
   isListening: boolean;
   isThinking: boolean;
+  isRecording: boolean;
+  isActive: boolean;
+  onToggle: () => void;
 }
 
-export default function Orb({ isSpeaking, isListening, isThinking }: OrbProps) {
+export default function Orb({ isSpeaking, isListening, isThinking, isRecording, isActive, onToggle }: OrbProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animFrameRef = useRef<number>(0);
 
@@ -32,12 +35,20 @@ export default function Orb({ isSpeaking, isListening, isThinking }: OrbProps) {
       const baseRadius = 90;
 
       // Determine animation intensity
-      let intensity = 0.3; // idle breathing
-      let speed = 1;
+      let intensity = isActive ? 0.3 : 0.05; // idle breathing or dormant
+      let speed = isActive ? 1 : 0.3;
       let glowColor = "rgba(255, 255, 255,";
       let ringColor = "rgba(255, 255, 255,";
 
-      if (isSpeaking) {
+      if (!isActive) {
+        glowColor = "rgba(100, 100, 100,";
+        ringColor = "rgba(100, 100, 100,";
+      } else if (isRecording) {
+        intensity = 0.7 + Math.sin(time * 6) * 0.3;
+        speed = 2.5;
+        glowColor = "rgba(255, 100, 100,";
+        ringColor = "rgba(255, 120, 120,";
+      } else if (isSpeaking) {
         intensity = 0.8 + Math.sin(time * 8) * 0.3;
         speed = 3;
         glowColor = "rgba(200, 180, 255,";
@@ -97,11 +108,26 @@ export default function Orb({ isSpeaking, isListening, isThinking }: OrbProps) {
         }
       }
 
+      // Pulsing wave rings when recording voice
+      if (isRecording) {
+        for (let w = 0; w < 3; w++) {
+          const wavePhase = (time * 3 + w * 2.1) % 6.28;
+          const waveRadius = baseRadius + 15 + wavePhase * 25;
+          const waveAlpha = Math.max(0, 0.35 - wavePhase * 0.06);
+          ctx.beginPath();
+          ctx.arc(cx, cy, waveRadius, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(255, 120, 120, ${waveAlpha})`;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+
       // Main orb body - breathing
       const breathe = Math.sin(time * speed) * 4 * intensity;
       const orbRadius = baseRadius + breathe;
 
-      // Orb gradient
+      // Orb gradient — dimmer when inactive
+      const orbAlpha = isActive ? 1 : 0.3;
       const orbGradient = ctx.createRadialGradient(
         cx - orbRadius * 0.2,
         cy - orbRadius * 0.3,
@@ -110,10 +136,10 @@ export default function Orb({ isSpeaking, isListening, isThinking }: OrbProps) {
         cy,
         orbRadius
       );
-      orbGradient.addColorStop(0, "rgba(255, 255, 255, 0.95)");
-      orbGradient.addColorStop(0.5, "rgba(240, 240, 255, 0.85)");
-      orbGradient.addColorStop(0.8, "rgba(220, 220, 240, 0.7)");
-      orbGradient.addColorStop(1, "rgba(200, 200, 230, 0.4)");
+      orbGradient.addColorStop(0, `rgba(255, 255, 255, ${0.95 * orbAlpha})`);
+      orbGradient.addColorStop(0.5, `rgba(240, 240, 255, ${0.85 * orbAlpha})`);
+      orbGradient.addColorStop(0.8, `rgba(220, 220, 240, ${0.7 * orbAlpha})`);
+      orbGradient.addColorStop(1, `rgba(200, 200, 230, ${0.4 * orbAlpha})`);
 
       ctx.beginPath();
       ctx.arc(cx, cy, orbRadius, 0, Math.PI * 2);
@@ -150,35 +176,47 @@ export default function Orb({ isSpeaking, isListening, isThinking }: OrbProps) {
     draw();
 
     return () => cancelAnimationFrame(animFrameRef.current);
-  }, [isSpeaking, isListening, isThinking]);
+  }, [isSpeaking, isListening, isThinking, isRecording, isActive]);
 
   return (
     <div className="relative flex items-center justify-center">
       <canvas
         ref={canvasRef}
-        className="w-[300px] h-[300px] md:w-[400px] md:h-[400px]"
+        className="w-[300px] h-[300px] md:w-[400px] md:h-[400px] cursor-pointer"
         style={{ imageRendering: "auto" }}
+        onClick={onToggle}
+        title={isActive ? "Click to deactivate" : "Click to activate"}
       />
 
       {/* Status text below orb */}
       <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
         <div className="text-center">
-          {isSpeaking && (
+          {!isActive && (
+            <span className="text-white/20 text-xs tracking-widest uppercase">
+              Tap to activate
+            </span>
+          )}
+          {isActive && isRecording && (
+            <span className="text-red-400/80 text-xs tracking-widest uppercase animate-pulse">
+              Listening to you
+            </span>
+          )}
+          {isActive && isSpeaking && !isRecording && (
             <span className="text-white/60 text-xs tracking-widest uppercase animate-pulse">
               Speaking
             </span>
           )}
-          {isThinking && (
+          {isActive && isThinking && !isRecording && (
             <span className="text-white/60 text-xs tracking-widest uppercase animate-pulse">
               Thinking
             </span>
           )}
-          {isListening && !isSpeaking && !isThinking && (
+          {isActive && isListening && !isSpeaking && !isThinking && !isRecording && (
             <span className="text-white/40 text-xs tracking-widest uppercase">
               Listening
             </span>
           )}
-          {!isSpeaking && !isThinking && !isListening && (
+          {isActive && !isSpeaking && !isThinking && !isListening && !isRecording && (
             <span className="text-white/20 text-xs tracking-widest uppercase">
               Ready
             </span>
