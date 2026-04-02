@@ -3,18 +3,16 @@
 import { useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import type { MoodReading, Mood } from "@/lib/mood-types";
-import MoodDisplay from "@/components/MoodDisplay";
+import Orb from "@/components/Orb";
 import ChatPanel from "@/components/ChatPanel";
+import MoodDisplay from "@/components/MoodDisplay";
 import MoodHistory from "@/components/MoodHistory";
 import useVoicePlayer from "@/components/useVoicePlayer";
+import { MOOD_EMOJI } from "@/lib/mood-types";
 
 const WebcamFeed = dynamic(() => import("@/components/WebcamFeed"), {
   ssr: false,
-  loading: () => (
-    <div className="rounded-2xl bg-gray-900 border border-white/10 h-[360px] flex items-center justify-center">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-500" />
-    </div>
-  ),
+  loading: () => null,
 });
 
 export default function Home() {
@@ -22,6 +20,9 @@ export default function Home() {
   const [moodHistory, setMoodHistory] = useState<MoodReading[]>([]);
   const [currentMood, setCurrentMood] = useState<Mood>("neutral");
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
+  const [showWebcam, setShowWebcam] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
 
   const { speak } = useVoicePlayer({
     onSpeakingChange: setIsSpeaking,
@@ -34,75 +35,110 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="min-h-screen">
-      {/* Header */}
-      <header className="border-b border-white/5 bg-black/20 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-600 to-fuchsia-600 flex items-center justify-center shadow-lg shadow-violet-500/25">
-              <span className="text-xl">🧠</span>
-            </div>
-            <div>
-              <h1 className="text-white font-bold text-xl tracking-tight">
-                MoodAI
-              </h1>
-              <p className="text-gray-500 text-xs">
-                Face Recognition · Mood Detection · AI Chat · Voice
-              </p>
-            </div>
-          </div>
+    <main className="h-screen flex flex-col overflow-hidden relative">
+      {/* Background */}
+      <div className="absolute inset-0 bg-[#030712]" />
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/50" />
 
-          {/* Status indicators */}
-          <div className="flex items-center gap-4">
-            {isSpeaking && (
-              <div className="flex items-center gap-2 bg-violet-500/10 border border-violet-500/20 rounded-full px-3 py-1.5">
-                <div className="flex gap-0.5">
-                  {[...Array(4)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="w-1 bg-violet-400 rounded-full animate-pulse"
-                      style={{
-                        height: `${8 + Math.random() * 12}px`,
-                        animationDelay: `${i * 0.15}s`,
-                      }}
-                    />
-                  ))}
-                </div>
-                <span className="text-violet-300 text-xs">Speaking</span>
-              </div>
-            )}
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <div className="w-2 h-2 rounded-full bg-green-500" />
-              Claude + ElevenLabs
+      {/* Subtle radial glow behind orb */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-white/[0.02] blur-3xl pointer-events-none" />
+
+      {/* Top bar */}
+      <header className="relative z-20 flex items-center justify-between px-6 py-4">
+        <div className="flex items-center gap-3">
+          <h1 className="text-white/80 font-light text-lg tracking-wide">
+            MoodAI
+          </h1>
+          {currentReading && (
+            <div className="flex items-center gap-1.5 bg-white/5 rounded-full px-3 py-1">
+              <span className="text-sm">{MOOD_EMOJI[currentMood]}</span>
+              <span className="text-white/40 text-xs capitalize">{currentMood}</span>
             </div>
-          </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowWebcam(!showWebcam)}
+            className={`px-3 py-1.5 rounded-full text-xs transition-all ${
+              showWebcam
+                ? "bg-white/10 text-white/70 border border-white/20"
+                : "text-white/30 hover:text-white/50 border border-transparent"
+            }`}
+          >
+            📷 Camera
+          </button>
+          <button
+            onClick={() => setShowAnalytics(!showAnalytics)}
+            className={`px-3 py-1.5 rounded-full text-xs transition-all ${
+              showAnalytics
+                ? "bg-white/10 text-white/70 border border-white/20"
+                : "text-white/30 hover:text-white/50 border border-transparent"
+            }`}
+          >
+            📊 Analytics
+          </button>
         </div>
       </header>
 
-      {/* Main content */}
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left column - Camera & Mood */}
-          <div className="lg:col-span-4 space-y-6">
+      {/* Center: The Orb */}
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center -mt-16">
+        <Orb
+          isSpeaking={isSpeaking}
+          isListening={!!currentReading}
+          isThinking={isThinking}
+        />
+      </div>
+
+      {/* Bottom: Chat input + messages */}
+      <div className="relative z-20 px-4 pb-6">
+        <ChatPanel
+          currentMood={currentMood}
+          onSpeak={speak}
+          isSpeaking={isSpeaking}
+          onThinkingChange={setIsThinking}
+        />
+      </div>
+
+      {/* Webcam mini-feed (top-left overlay) */}
+      {showWebcam && (
+        <div className="absolute top-16 left-4 z-30 w-64">
+          <div className="relative">
+            <button
+              onClick={() => setShowWebcam(false)}
+              className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-black/60 text-white/60 text-xs flex items-center justify-center hover:bg-black/80"
+            >
+              ✕
+            </button>
             <WebcamFeed onMoodChange={handleMoodChange} />
+          </div>
+          <div className="mt-2">
             <MoodDisplay reading={currentReading} />
           </div>
+        </div>
+      )}
 
-          {/* Center column - Chat */}
-          <div className="lg:col-span-5">
-            <ChatPanel
-              currentMood={currentMood}
-              onSpeak={speak}
-              isSpeaking={isSpeaking}
-            />
-          </div>
+      {/* Hidden webcam when feed is closed (still detects) */}
+      {!showWebcam && (
+        <div className="hidden">
+          <WebcamFeed onMoodChange={handleMoodChange} />
+        </div>
+      )}
 
-          {/* Right column - Analytics */}
-          <div className="lg:col-span-3">
+      {/* Analytics panel (right overlay) */}
+      {showAnalytics && (
+        <div className="absolute top-16 right-4 z-30 w-72">
+          <div className="relative">
+            <button
+              onClick={() => setShowAnalytics(false)}
+              className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-black/60 text-white/60 text-xs flex items-center justify-center hover:bg-black/80"
+            >
+              ✕
+            </button>
             <MoodHistory readings={moodHistory} />
           </div>
         </div>
-      </div>
+      )}
     </main>
   );
 }
